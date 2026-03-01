@@ -14,9 +14,9 @@ class PositionalEncoding(nn.Module):
         pe = pe.unsqueeze(0) # (1, max_len, d_model)
         self.register_buffer('pe', pe)
 
-    def forward(self, x):
+    def forward(self, x, offset=0):
         # x shape: (B, L, d_model)
-        x = x + self.pe[:, :x.size(1), :]
+        x = x + self.pe[:, offset:offset+x.size(1), :]
         return x
 
 class MultiTaskSandhiTransformer(nn.Module):
@@ -176,6 +176,10 @@ class MultiTaskSandhiTransformer(nn.Module):
         """Helper for Inference (Beam Search Phase 2: Autoregressive decoding)"""
         device = memory.device
         dec_emb = self.decoder_vocab_embed(tgt)
+        
+        # In inference, we only pass the last token's representation to save compute, 
+        # or we pass the whole sequence but need the right positional offset.
+        # Here we pass the whole sequence `tgt` but ensure positional encoding starts from 0.
         encoded_dec = self.pos_encoder(dec_emb)
         
         tgt_mask = self.generate_square_subsequent_mask(tgt.size(1), device)
