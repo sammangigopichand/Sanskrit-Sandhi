@@ -22,7 +22,14 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     
     model = MultiTaskSandhiTransformer(vocab_size=vocab_size, num_rules=num_rules).to(device)
     criterion = MultiTaskSandhiLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    
+    # Use AdamW + lower learning rate + OneCycleLR schema to prevent Transformer gradient collapse
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    steps_per_epoch = len(dataloader)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=1e-3, steps_per_epoch=steps_per_epoch, epochs=epochs,
+        pct_start=0.1, anneal_strategy='cos'
+    )
     
     print("Starting Multi-Task Training...")
     
@@ -51,7 +58,9 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
             )
             
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # Clip to stop explosions
             optimizer.step()
+            scheduler.step()
             total_loss += loss.item()
             
         print(f"Epoch {epoch+1}/{epochs} | Avg Loss: {total_loss/len(dataloader):.4f}")

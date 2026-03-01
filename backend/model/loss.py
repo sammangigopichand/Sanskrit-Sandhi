@@ -62,8 +62,8 @@ class MultiTaskSandhiLoss(nn.Module):
             
         c_loss = self.conf_criterion(conf_score, conf_target)
         
-        # Combine Loss
-        total_loss = b_loss + (0.5 * r_loss) + (0.5 * rec_loss) + (0.3 * c_loss)
+        # Combine Loss (Prioritize literal sequence reconstruction over classifying 11k rules)
+        total_loss = (1.0 * b_loss) + (0.1 * r_loss) + (2.0 * rec_loss) + (0.2 * c_loss)
         
         return total_loss, {
             'b_loss': b_loss.item(),
