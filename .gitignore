@@ -35,3 +35,6 @@ venv.bak/
 .vscode/
 *.swp
 *.swo
+
+# Explicitly allow the dataset file
+!sandhikosh_sample.csv
