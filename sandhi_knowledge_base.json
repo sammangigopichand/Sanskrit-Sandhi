@@ -1,0 +1,29 @@
+{
+    "11001.0": {
+        "name": "Vriddhi Sandhi",
+        "sutra": "वृद्धिरादैच् (1.1.1)",
+        "description": "The vowels 'ā', 'ai', and 'au' are called Vṛddhi."
+    },
+    "11003.0": {
+        "name": "Guna and Vriddhi Substitution",
+        "sutra": "इको गुणवृद्धी (1.1.3)",
+        "description": "Guna and Vriddhi substitute for 'ik' (i, u, ṛ, ḷ) vowels."
+    },
+    "11007.0": {
+        "name": "Samyoga (Conjunct Consonants)",
+        "sutra": "हलोऽनन्तराः संयोगः (1.1.7)",
+        "description": "Consonants uninterrupted by vowels are termed 'Samyoga'."
+    },
+    "Vowel": {
+        "name": "Ach Sandhi (Vowel Sandhi)",
+        "description": "A junction where two vowels merge to form a single phonetic sound."
+    },
+    "Consonant": {
+        "name": "Hal Sandhi (Consonant Sandhi)",
+        "description": "A junction involving at least one consonant changing form."
+    },
+    "Visarga": {
+        "name": "Visarga Sandhi",
+        "description": "Transformations of the Visarga (ḥ)."
+    }
+}

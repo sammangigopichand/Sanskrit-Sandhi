@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch Model Weights
+*.pth
+*.pt
+*.cp
+
+# SQLite Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Datasets and Large Files
+*.csv
+*.xls
+*.xlsx
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Streamlit
+.streamlit/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo

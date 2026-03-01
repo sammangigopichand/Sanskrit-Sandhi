@@ -1,0 +1,32 @@
+# Sanskrit Sandhi Splitter Redesign Walkthrough
+
+I have successfully redesigned the seq2seq application into a generalized **Multi-Task Neural-Symbolic Architecture** that avoids memorizing dictionary definitions and learns true linguistic combinations.
+
+## 1. Phonetic Feature Encoding
+We created a character-level extraction class [PhoneticEncoder](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/phonetics/features.py#3-72) ([backend/phonetics/features.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/phonetics/features.py)). Instead of viewing characters as pure integer IDs, the system embeds 4 distinct phonetic mappings:
+- **Type**: Vowel, Consonant, Semivowel, Sibilant, Modifier.
+- **Place of Articulation**: Velar, Palatal, Retroflex, Dental, Labial.
+- **Length**: Short vs Long.
+- **Guna/Vrddhi State**.
+
+## 2. Multi-Task Transformer Model
+The model architecture was rewritten into the [MultiTaskSandhiTransformer](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/model/transformer.py#22-131) ([backend/model/transformer.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/model/transformer.py)). The features are now extracted through 4 conditionally independent prediction heads:
+- **Boundary Head**: $P(B|X)$ - Predicts the exact point of splitting.
+- **Rule ID Head**: $P(R|X)$ - Categorizes which abstract Paninian rule is occurring (Dirgha, Guna, etc).
+- **Reconstruction Head**: Uses a small GRU Decoder with CrossAttention to predict the local transformations surrounding the phonetic break.
+- **Confidence Head**: $P(C|X)$ - Determines exactly how confident the neural network is about its grammatical prediction.
+
+*We also added a new composite loss function ([backend/model/loss.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/model/loss.py)) balancing all four heads dynamically.*
+
+## 3. Constrained Decoding & Hallucination Mitigation
+We built the [ConstrainedDecoder](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/decoding/beam_search.py#5-86) ([backend/decoding/beam_search.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/decoding/beam_search.py)) algorithm that runs during [app.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/app.py) execution:
+1. Validates generated split terms through the SQLite database using $P(Lexicon|Y)$.
+2. Thresholds the prediction against the **Confidence Head**.
+3. **Symbolic Fallback Integration**: If the model confidence is low, the pipeline switches completely to the deterministic math engine ([backend/symbolic/engine.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/symbolic/engine.py)), parsing the dirgha ('ा', 'ी') and guna ('े', 'ो') matras using grammatical invariants.
+
+## 4. Self-Training Loop
+A new heuristic has been added in [backend/training/self_training.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/training/self_training.py) which tracks unlabeled compound words. If the neural prediction yields a 90%+ confidence and successfully passes Lexicon validation verification, it stores the exact prediction back into a pseudo-labeled corpus, which is periodically mixed with the original dataset, allowing the AI to bootstrap continually.
+
+## 5. Mathematical Exposition & UI Changes
+- The generalized improvements and combination algebra are detailed deeply inside [backend/symbolic/math_explanation.md](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/backend/symbolic/math_explanation.md).
+- [app.py](file:///c:/Users/samma/OneDrive/Documents/Set%20project%20Sandhi/app.py) has been completely reworked to ingest the pipeline. The interface now visibly separates the execution layers into **Layer 1: Lexicon Match**, **Layer 2: AI Neural Network Inference**, and **Layer 3: Algorithmic Rule Engine**, printing the exact neural confidence scores right into the chat.

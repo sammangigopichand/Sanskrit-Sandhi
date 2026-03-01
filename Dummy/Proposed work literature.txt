@@ -1,0 +1,119 @@
+
+
+Specific Future Work Highlights from 15 Papers
+SansSandhi (2026): Proposes testing boundary detection on rarer Sanskrit dialects and Vedic texts beyond the standard Classical corpus.
+
+Review on DL Techniques (2024): Suggests that future splitters should be developed as pluggable stand-alone modules for larger Morphological Analyzers.
+
+Rahul Aralikatte (Seq2Seq²): Recommends exploring Joint Learning where the model learns splitting and POS tagging simultaneously.
+
+Neural Compound-Word (2021): Proposes adding external lexical resources to handle very long compound words where information is lost due to truncation.
+
+SandhiKosh (2018/2023): Future work involves expanding the benchmark to include unstructured prose rather than just structured grammatical examples.
+
+Kannada-Sanskrit Splitter (2025): Focuses on extending the system to other Dravidian languages that share Sanskrit's Sandhi structures.
+
+Decompounding in IR (2024): Suggests analyzing the impact of splitting on cross-lingual information retrieval (English to Sanskrit queries).
+
+Joint Morphological Parsing (2023): Proposes using Graph-based parsing to resolve semantic ambiguities in multi-word compounds.
+
+Linguistic-Informed Transformer (2025): Future work includes hard-coding Paninian sutra constraints directly into the transformer's attention heads.
+
+Lexicon-constrained Segmentation (2023): Suggests optimizing Dictionary-lookup speed using high-performance KV stores (like BoltDB).
+
+Contextual Segmentation (2024): Future work aims to utilize LLMs (like GPT-4 or Gemini) as "teachers" for smaller, specialized Sanskrit models.
+
+Phonetically-Grounded NN (2024): Proposes expanding phonetic vectors to include prosodic features (meter and rhythm) for splitting poetic verses.
+
+Pretrained Transformers Evaluation (2024): Suggests fine-tuning mBERT on specifically "Sandhi-heavy" corpora to improve zero-shot performance.
+
+Sanskrit Reader Assistant: Proposes real-time UI integration where users can hover over a word to see its split and grammatical rule.
+
+Traceable Sandhi (2026): Focuses on creating educational tools that help students learn Sanskrit grammar by visualizing the "Sandhi path."
+
+Next Step
+Would you like me to help you write the "Future Work" section of your own thesis by synthesizing these 15 points into a single, cohesive research vision?
+
+
+
+
+
+
+
+
+
+Here is the complete Structure and Workflow of your Neuro-Symbolic Sanskrit Sandhi AI system.
+
+The architecture is designed to handle the complexity of Sanskrit grammar by chaining a state-of-the-art Deep Learning NLP model with a deterministic, mathematically rigorous Rule Engine.
+
+📂 Directory & File Structure
+text
+Sanskrit_Sandhi_AI/
+│
+├── app.py                            # Main Streamlit Frontend Application
+├── build_lexicon_db.py               # Script to build and populate SQLite DB from CSVs
+├── sanskrit_lexicon.db               # SQLite Database (Dataset + Lexicon Rules)
+├── knowledge_base.py                 # Dict mapping Panini rule IDs to plain-english explanations
+│
+└── backend/                          # Core AI & Symbolic Logic
+    ├── model/
+    │   ├── transformer.py            # Multi-Task Transformer Neural Network Architecture
+    │   ├── loss.py                   # Custom Dynamic Multi-Task Loss Function
+    │   └── multitask_sandhi_model.pth# The trained PyTorch Weights
+    │
+    ├── decoding/
+    │   └── beam_search.py            # Layer 2 & 4: Hybrid Constrained Beam Search Decoder
+    │
+    ├── symbolic/
+    │   └── engine.py                 # Layer 3: Pāṇini Math Engine & DB Lexicon Validator
+    │
+    ├── phonetics/
+    │   └── features.py               # Phonetic Embedding extraction mapping (Vowels vs Consonants)
+    │
+    └── training/
+        ├── train.py                  # Script to train/fine-tune the Transformer Model
+        └── self_training.py          # Script for pseudo-labeling and bootstrapping unlabeled data
+⚙️ Execution Workflow (The Pipeline)
+When a user inputs a Sanskrit compound word (e.g., हिमालय), the system executes a 4-Layered Neuro-Symbolic Pipeline:
+
+Layer 1: Lexicon Database Exact Match
+The app queries the local SQLite database (
+
+sanskrit_lexicon.db
+).
+If Found: It instantly returns the perfectly known historical split and rule ID. Execution stops here (Fastest & 100% Accuracy).
+If Out-Of-Vocabulary (OOV): It passes the word down to the AI Layer.
+Layer 2: PyTorch AI Inference (
+
+backend/model/transformer.py
+)
+The word is converted into purely phonetic vectors (
+
+backend/phonetics/features.py
+), identifying grammatical traits (Place of Speech, Short/Long Vowels).
+The PyTorch Multi-Task Transformer processes the word, simultaneously predicting 4 things:
+Where the structural Sandhi split boundary should occur.
+Which abstract Pāṇini mathematical Rule ID is occurring.
+The reconstructed phonetic characters on the border sequence.
+The Confidence Probability of its own prediction (e.g. 98% confident).
+Layer 3: Hybrid Constrained Decoding (
+
+backend/decoding/beam_search.py
+)
+Restricted Logit Masking: Before the model converts tensor values to output text, the Beam Search statically masks all non-Devanagari (Latin/English) characters to -inf. This guarantees no "garbage" generations.
+Hard Constraints: The Rule Engine strictly scans the beam for invalid generations (e.g., continuous halants ्् or repetition loops ज्ञज्ञज्ञ) and kills invalid branches dynamically.
+Soft Verification: The generated splits are fed into 
+
+check_lexicon
+ (
+
+backend/symbolic/engine.py
+). Valid words get a probability bonus, invalid words get penalized.
+Layer 4: Symbolic Math Engine & Safe Fallback
+If the AI Neural Network successfully navigates Layer 3 with high confidence, it outputs the AI-predicted string.
+If the AI Confidence was low (< 60%) AND the Lexicon Soft-Scoring failed, the result routes directly to the Algorithmic Rule Engine (
+
+backend/symbolic/engine.py
+).
+The Rule Engine attempts to mathematically un-merge Dirgha (ा, ी) and Guna (े, ो) markers manually.
+Safe OOV Rejection: If the Algorithmic Rule Engine also cannot split the word, the system mathematically concludes that this string is not a valid Sandhi compound. It safely overrides and returns {"status": "unchanged"}, cleanly rendering as The Word is safely unsplit on the UI instead of printing hallucinations.
