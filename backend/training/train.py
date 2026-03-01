@@ -14,10 +14,13 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
         
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate_multitask)
     
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Training on device: {device}")
+    
     vocab_size = len(dataset.char2idx)
     num_rules = len(dataset.rule2idx)
     
-    model = MultiTaskSandhiTransformer(vocab_size=vocab_size, num_rules=num_rules)
+    model = MultiTaskSandhiTransformer(vocab_size=vocab_size, num_rules=num_rules).to(device)
     criterion = MultiTaskSandhiLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
@@ -28,6 +31,14 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
         total_loss = 0.0
         
         for batch_idx, (xs_pad, x_phons_pad, y_bounds_pad, y_rules_tensor, y_recons_in_pad, y_recons_out_pad, pad_mask) in enumerate(dataloader):
+            xs_pad = xs_pad.to(device)
+            x_phons_pad = x_phons_pad.to(device)
+            y_bounds_pad = y_bounds_pad.to(device)
+            y_rules_tensor = y_rules_tensor.to(device)
+            y_recons_in_pad = y_recons_in_pad.to(device)
+            y_recons_out_pad = y_recons_out_pad.to(device)
+            pad_mask = pad_mask.to(device)
+
             optimizer.zero_grad()
             
             boundary_logits, rule_logits, recon_logits, conf_score = model(
