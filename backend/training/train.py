@@ -82,10 +82,23 @@ if __name__ == '__main__':
     import pandas as pd
     import os
     
-    csv_path = os.path.join(os.path.dirname(__file__), '../data/dcs_sandhi_pairs.csv')
+    # Try multiple paths depending on how the script is invoked
+    csv_paths = [
+        os.path.join(os.path.dirname(__file__), '../data/dcs_sandhi_pairs.csv'),     # Script relative
+        os.path.join(os.getcwd(), 'backend/data/dcs_sandhi_pairs.csv'),              # Module relative from root
+        'backend/data/dcs_sandhi_pairs.csv',
+        'data/dcs_sandhi_pairs.csv'
+    ]
+    
+    csv_path = None
+    for cp in csv_paths:
+        if os.path.exists(cp):
+            csv_path = cp
+            break
+            
     dataset_overrides = None
     
-    if os.path.exists(csv_path):
+    if csv_path:
         print(f"Loading generated dataset from {csv_path}")
         df = pd.read_csv(csv_path)
         data_pairs = list(zip(df['compound'], df['split'], df['rule_id']))
