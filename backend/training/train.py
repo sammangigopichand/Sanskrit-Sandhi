@@ -29,14 +29,6 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     num_rules = len(dataset.rule2idx)
     
     model = MultiTaskSandhiTransformer(vocab_size=vocab_size, num_rules=num_rules).to(device)
-    
-    # Optional PyTorch 2.0 Compilation for speed
-    if hasattr(torch, 'compile') and torch.cuda.is_available():
-        print("Optimizing model via torch.compile()...")
-        try:
-            model = torch.compile(model)
-        except Exception as e:
-            print(f"Skipped compilation: {e}")
             
     criterion = MultiTaskSandhiLoss()
     
