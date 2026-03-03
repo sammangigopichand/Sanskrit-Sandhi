@@ -12,7 +12,15 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     else:
         dataset = dataset_overrides
         
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate_multitask)
+    num_workers = os.cpu_count() if torch.cuda.is_available() else 0
+    dataloader = DataLoader(
+        dataset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        collate_fn=pad_collate_multitask, 
+        num_workers=num_workers,
+        pin_memory=True if torch.cuda.is_available() else False
+    )
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Training on device: {device}")
@@ -21,7 +29,19 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     num_rules = len(dataset.rule2idx)
     
     model = MultiTaskSandhiTransformer(vocab_size=vocab_size, num_rules=num_rules).to(device)
+    
+    # Optional PyTorch 2.0 Compilation for speed
+    if hasattr(torch, 'compile') and torch.cuda.is_available():
+        print("Optimizing model via torch.compile()...")
+        try:
+            model = torch.compile(model)
+        except Exception as e:
+            print(f"Skipped compilation: {e}")
+            
     criterion = MultiTaskSandhiLoss()
+    
+    # Initialize Gradient Scaler for Automatic Mixed Precision (AMP)
+    scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
     
     # Use AdamW + lower learning rate + OneCycleLR schema to prevent Transformer gradient collapse
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
@@ -48,18 +68,34 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
 
             optimizer.zero_grad()
             
-            boundary_logits, rule_logits, recon_logits, conf_score = model(
-                xs_pad, x_phons_pad, target_recon_in=y_recons_in_pad
-            )
-            
-            loss, loss_dict = criterion(
-                boundary_logits, rule_logits, recon_logits, conf_score,
-                y_bounds_pad, y_rules_tensor, y_recons_out_pad, pad_mask
-            )
-            
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0) # Clip to stop explosions
-            optimizer.step()
+            # Use Automatic Mixed Precision for significant speed improvements on T4/L4 GPUs
+            if scaler:
+                with torch.cuda.amp.autocast():
+                    boundary_logits, rule_logits, recon_logits, conf_score = model(
+                        xs_pad, x_phons_pad, target_recon_in=y_recons_in_pad
+                    )
+                    loss, loss_dict = criterion(
+                        boundary_logits, rule_logits, recon_logits, conf_score,
+                        y_bounds_pad, y_rules_tensor, y_recons_out_pad, pad_mask
+                    )
+                
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                boundary_logits, rule_logits, recon_logits, conf_score = model(
+                    xs_pad, x_phons_pad, target_recon_in=y_recons_in_pad
+                )
+                loss, loss_dict = criterion(
+                    boundary_logits, rule_logits, recon_logits, conf_score,
+                    y_bounds_pad, y_rules_tensor, y_recons_out_pad, pad_mask
+                )
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                
             scheduler.step()
             total_loss += loss.item()
             

@@ -3,6 +3,8 @@ import csv
 import re
 import unicodedata
 import random
+import multiprocessing
+from functools import partial
 from collections import Counter
 from tqdm import tqdm
 import sys
@@ -83,7 +85,88 @@ def balance_and_boost_dataset(dataset):
     return final_dataset
 
 
-def generate_dcs_training_data():
+def process_single_file(file_name, input_folder):
+    """Processes a single text file and returns a list of sandhi pair dictionaries."""
+    file_path = os.path.join(input_folder, file_name)
+    local_dataset = []
+    
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    current_sentence = []
+    
+    for line in lines:
+        line = normalize_text(line)
+
+        # Sentence Boundary detection
+        if line.startswith('# id ='):
+            if len(current_sentence) >= 2:
+                # Generate pairs for previous sentence
+                for i in range(len(current_sentence) - 1):
+                    w1, w2 = current_sentence[i], current_sentence[i + 1]
+                    compound, rule_id = forward_sandhi(w1, w2)
+                    
+                    if compound is None:
+                        continue
+                        
+                    compound = clean_avagraha(compound)
+                    
+                    # Minimum Length Filter
+                    if len(compound) < 4:
+                        continue
+                        
+                    # NO_SANDHI case identification
+                    if compound == w1 + w2:
+                        rule_id = "No_Sandhi"
+                        
+                    split_form = f"{w1}+{w2}"
+                    local_dataset.append({
+                        "compound": compound,
+                        "split": split_form,
+                        "rule_id": rule_id
+                    })
+            
+            # Reset sentence builder for the new ID
+            current_sentence = []
+            continue
+
+        # Skip other comments
+        if line.startswith('#') or not line.strip():
+            continue
+
+        # Extract structured column
+        # Typically DCS gives: surface \t lemma \t pos=... etc. We only take surface (columns[0])
+        columns = line.split('\t')
+        if not columns:
+            columns = line.split() # Fallback if tab is not used nicely
+            
+        if columns:
+            surface = columns[0].strip()
+            if ',' in surface:
+                surface = surface.split(',')[0].strip()
+            
+            # Transliterate from SLP1 to Devanagari BEFORE strict regex checks
+            surface = to_devanagari(surface)
+            
+            if is_valid_sanskrit_token(surface):
+                current_sentence.append(surface)
+
+    # Process the very last sentence in the file
+    if len(current_sentence) >= 2:
+        for i in range(len(current_sentence) - 1):
+            w1, w2 = current_sentence[i], current_sentence[i + 1]
+            compound, rule_id = forward_sandhi(w1, w2)
+            if compound is None: continue
+            compound = clean_avagraha(compound)
+            if len(compound) < 4: continue
+            if compound == w1 + w2:
+                rule_id = "No_Sandhi"
+            local_dataset.append({"compound": compound, "split": f"{w1}+{w2}", "rule_id": rule_id})
+
+    return local_dataset
+
+
+def generate_dcs_training_data_parallel():
     dataset = []
 
     if not os.path.exists(DCS_TEXT_FOLDER):
@@ -91,82 +174,19 @@ def generate_dcs_training_data():
         return dataset
 
     files = [f for f in os.listdir(DCS_TEXT_FOLDER) if f.endswith(".txt")]
-    
-    for file in files:
-        file_path = os.path.join(DCS_TEXT_FOLDER, file)
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        current_sentence = []
+    if not files:
+        return dataset
         
-        for line in tqdm(lines, desc=f"Processing {file}"):
-            line = normalize_text(line)
-
-            # Sentence Boundary detection
-            if line.startswith('# id ='):
-                if len(current_sentence) >= 2:
-                    # Generate pairs for previous sentence
-                    for i in range(len(current_sentence) - 1):
-                        w1, w2 = current_sentence[i], current_sentence[i + 1]
-                        compound, rule_id = forward_sandhi(w1, w2)
-                        
-                        if compound is None:
-                            continue
-                            
-                        compound = clean_avagraha(compound)
-                        
-                        # Minimum Length Filter
-                        if len(compound) < 4:
-                            continue
-                            
-                        # NO_SANDHI case identification
-                        if compound == w1 + w2:
-                            rule_id = "No_Sandhi"
-                            
-                        split_form = f"{w1}+{w2}"
-                        dataset.append({
-                            "compound": compound,
-                            "split": split_form,
-                            "rule_id": rule_id
-                        })
-                
-                # Reset sentence builder for the new ID
-                current_sentence = []
-                continue
-
-            # Skip other comments
-            if line.startswith('#') or not line.strip():
-                continue
-
-            # Extract structured column
-            # Typically DCS gives: surface \t lemma \t pos=... etc. We only take surface (columns[0])
-            columns = line.split('\t')
-            if not columns:
-                columns = line.split() # Fallback if tab is not used nicely
-                
-            if columns:
-                surface = columns[0].strip()
-                if ',' in surface:
-                    surface = surface.split(',')[0].strip()
-                
-                # Transliterate from SLP1 to Devanagari BEFORE strict regex checks
-                surface = to_devanagari(surface)
-                
-                if is_valid_sanskrit_token(surface):
-                    current_sentence.append(surface)
-
-        # Process the very last sentence in the file
-        if len(current_sentence) >= 2:
-            for i in range(len(current_sentence) - 1):
-                w1, w2 = current_sentence[i], current_sentence[i + 1]
-                compound, rule_id = forward_sandhi(w1, w2)
-                if compound is None: continue
-                compound = clean_avagraha(compound)
-                if len(compound) < 4: continue
-                if compound == w1 + w2:
-                    rule_id = "No_Sandhi"
-                dataset.append({"compound": compound, "split": f"{w1}+{w2}", "rule_id": rule_id})
+    print(f"Starting parallel processing on {len(files)} files using {multiprocessing.cpu_count()} CPU cores...")
+    
+    processor = partial(process_single_file, input_folder=DCS_TEXT_FOLDER)
+    
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+        # Use simple map and tqdm wrapper to see general chunk progress
+        results = list(tqdm(pool.imap(processor, files), total=len(files), desc="Files Processed"))
+        
+    for res in results:
+        dataset.extend(res)
 
     return dataset
 
@@ -180,9 +200,9 @@ def save_to_csv(data, output_path):
 
 
 if __name__ == "__main__":
-    print("Generating DCS Sandhi dataset securely...")
+    print("Generating DCS Sandhi dataset securely with Multiprocessing...")
     
-    raw_dataset = generate_dcs_training_data()
+    raw_dataset = generate_dcs_training_data_parallel()
     print(f"Total raw pairs extracted (before balancing): {len(raw_dataset)}")
     
     final_dataset = balance_and_boost_dataset(raw_dataset)
