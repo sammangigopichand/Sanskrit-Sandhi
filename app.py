@@ -4,11 +4,45 @@ import sqlite3
 import pandas as pd
 import torch
 import os
+import google.generativeai as genai
+from dotenv import load_dotenv
 from knowledge_base import get_explanation
 from backend.model.transformer import MultiTaskSandhiTransformer
 from backend.decoding.beam_search import ConstrainedDecoder
 
+load_dotenv()
 st.set_page_config(page_title="Sanskrit Sandhi AI Chatbot", page_icon="🕉️", layout="centered")
+
+# Custom CSS for modern Chatbot feel
+st.markdown("""
+<style>
+    .stChatMessage {
+        background-color: transparent !important;
+    }
+    .st-emotion-cache-1c7y2kd {
+        border-radius: 12px;
+        padding: 1rem;
+        background-color: rgba(45, 45, 55, 0.4);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .main .block-container {
+        padding-top: 2rem;
+        max-width: 800px;
+    }
+    h1 {
+        text-align: center;
+        background: -webkit-linear-gradient(45deg, #FF6B6B, #4ECDC4);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5em;
+    }
+    .subtitle {
+        text-align: center;
+        color: #888;
+        margin-bottom: 2em;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 @st.cache_resource
 def get_db_connection():
@@ -48,6 +82,22 @@ def load_ai_model_v2():
 
 # Load the AI state
 ai_model, ai_decoder = load_ai_model_v2()
+
+@st.cache_resource
+def init_llm():
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+        
+    genai.configure(api_key=api_key)
+    # Give the LLM a system personality
+    model = genai.GenerativeModel(
+        model_name="gemini-2.5-flash",
+        system_instruction="You are a brilliant Sanskrit AI assistant integrated into 'Sandhi.ai', a Neuro-Symbolic Decompounding Interface. You chat nicely with humans, answering questions about Sanskrit and Sandhi rules. If they ask about predicting a word, explain that your underlying PyTorch Deep Learning model handles the mathematical splits visually below. Be concise, polite, and helpful."
+    )
+    return model
+
+llm = init_llm()
 
 def check_lexicon(word):
     """Check if the split token exists in the Lexicon database and fetch meaning."""
@@ -98,21 +148,30 @@ def split_word(compound_word):
     return None, "Error", 0.0
 
 # --- UI Setup ---
-st.title("🕉️ Sanskrit Sandhi Explainer AI")
-st.markdown("""
-Welcome to the **Neuro-Symbolic Sanskrit Decompounding Interface**.
-Enter a valid Sanskrit compound word (in Devanagari) to see how the Deep Learning model splits it!
-Features: Multi-Task Transformer, Constrained Decoding, & Phonetic Feature Encoding.
-""")
+st.title("🕉️ Sandhi.ai")
+st.markdown("<div class='subtitle'>Your Neuro-Symbolic Sanskrit Copilot</div>", unsafe_allow_html=True)
 
 # Example words that exist in our database
-st.sidebar.header("Try these examples:")
-st.sidebar.markdown("- वृद्धिरादैच्\n- इको गुणवृद्धी\n- निपात एकाजनाङ्\n- हिमालय\n- कवीन्द्र")
+with st.sidebar:
+    st.header("💬 Chat History")
+    if st.button("Clear Conversation", type="secondary"):
+        st.session_state.messages = []
+        st.rerun()
+        
+    st.divider()
+    st.header("✨ Try asking:")
+    st.markdown("""
+    - **वृद्धिरादैच्** *(Rule check)*
+    - **निपात एकाजनाङ्** *(Complex)*
+    - **कवीन्द्र** *(Inference Test)*
+    """)
 
 # --- Chat Interface ---
 # Initialize chat history
 if "messages" not in st.session_state:
-    st.session_state.messages = []
+    st.session_state.messages = [
+        {"role": "assistant", "content": "Namaskaram! 🙏 I am an advanced AI trained on Pāṇini's rules and neural sequence mapping. Send me a compound Sanskrit word (in Devanagari) and I will calculate its Sandhi split for you!"}
+    ]
 
 # Display chat messages from history on app rerun
 for message in st.session_state.messages:
@@ -120,15 +179,52 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # React to user input
-if prompt := st.chat_input("Enter a Sanskrit compound word (e.g. हिमालय)"):
+if prompt := st.chat_input("Ask about a Sanskrit compound word (e.g. हिमालय)"):
     # Display user message in chat message container
     st.chat_message("user").markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
+    # Check if the prompt contains any Devanagari characters
+    import re
+    has_devanagari = bool(re.search(r'[\u0900-\u097F]', prompt))
+    
     # 1. Pipeline execution: DB -> AI Decoder (Neural + Symbolic)
-    result_tuple, architecture_layer, confidence = split_word(prompt)
+    # We only run the heavy PyTorch Sandhi splitting if we detect Sanskrit characters
+    # AND the prompt isn't a long English sentence
+    run_splitter = has_devanagari and len(prompt.split()) < 4
+    result_tuple, architecture_layer, confidence = None, None, 0.0
+    
+    if run_splitter:
+        # Extract just the Sanskrit word if they typed "Split विद्यालय"
+        words = prompt.split()
+        target_word = prompt
+        for w in words:
+            if re.search(r'[\u0900-\u097F]', w):
+                target_word = w
+                break
+                
+        result_tuple, architecture_layer, confidence = split_word(target_word)
+        
+    # Generate LLM Conversation Response if available
+    llm_response_text = ""
+    if llm:
+        # Build chat history for Gemini
+        formatted_history = []
+        for msg in st.session_state.messages[:-1]: # exclude the latest prompt
+            formatted_history.append({"role": "user" if msg["role"] == "user" else "model", "parts": [msg["content"]]})
+            
+        try:
+            chat = llm.start_chat(history=formatted_history)
+            response = chat.send_message(prompt)
+            llm_response_text = response.text + "\n\n"
+        except Exception as e:
+            llm_response_text = f"*(LLM Error: {e})*\n\n"
+    elif not run_splitter:
+        llm_response_text = "I don't have an LLM API key configured yet, so I can only do Sandhi Splitting! Please enter a Sanskrit compound word in Devanagari (e.g. `हिमालय`).\n\n"
     
     with st.chat_message("assistant"):
+        response = llm_response_text
+        
         if result_tuple:
             w1, w2, s_type, r_id = result_tuple
             
@@ -139,8 +235,8 @@ if prompt := st.chat_input("Enter a Sanskrit compound word (e.g. हिमाल
             w1_valid, w1_meaning = check_lexicon(w1)
             w2_valid, w2_meaning = check_lexicon(w2)
             
-            w1_icon = "✅" if w1_valid else "❌"
-            w2_icon = "✅" if w2_valid else "❌"
+            w1_icon = "✅" if w1_valid else "⚠️"
+            w2_icon = "✅" if w2_valid else "⚠️"
             
             w1_def = f" (*{w1_meaning}*)" if w1_meaning else ""
             w2_def = f" (*{w2_meaning}*)" if w2_meaning else ""
@@ -157,11 +253,11 @@ if prompt := st.chat_input("Enter a Sanskrit compound word (e.g. हिमाल
                 magic_banner = f"🗄️ **Layer 1: Lexicon Database Exact Match**\n\n"
             
             if architecture_layer == "Unchanged-OOV-Fallback":
-                response = f"{magic_banner}✨ **The Word is safely unsplit**: `{w1}`{w1_def}\n\n"
+                response += f"{magic_banner}✨ **The Word is safely unsplit**: `{w1}`{w1_def}\n\n"
             else:
-                response = f"{magic_banner}✨ **The Split is**: `{w1}`{w1_def} + `{w2}`{w2_def}\n\n"
+                response += f"{magic_banner}✨ **The Split is**: `{w1}`{w1_def} + `{w2}`{w2_def}\n\n"
                 
-            response += f"### 🧠 Explainable AI Analysis\n"
+            response += f"### 🧠 Explainable PyTorch Analysis\n"
             response += f"* **Pāṇini Sutra:** {explanation.get('sutra', 'Unknown')}\n"
             response += f"* **Rule Type:** {explanation.get('name', 'Unknown')}\n"
             response += f"* **Explanation:** {explanation.get('description', 'A standard Sandhi phonetic change.')}\n\n"
@@ -172,11 +268,16 @@ if prompt := st.chat_input("Enter a Sanskrit compound word (e.g. हिमाल
                 response += f"- Is `{w2}` a valid Sanskrit token? {w2_icon}\n"
             
             st.markdown(response)
+        elif not run_splitter and not llm:
+            st.markdown(response)
+        elif not run_splitter and llm:
+            st.markdown(response)
         else:
             if not ai_model:
-                response = "I couldn't find a split for that word in the database, and the new Multi-Task AI model hasn't been trained/loaded yet! Try `इको गुणवृद्धी`."
+                fallback_resp = "I couldn't find a split for that word in the database, and the PyTorch AI model hasn't been mapped yet!"
             else:
-                response = "I couldn't find a split for that word in my current training corpus/AI."
+                fallback_resp = "I couldn't find a split for that word in my current training corpus/AI."
+            response += fallback_resp
             st.markdown(response)
             
         st.session_state.messages.append({"role": "assistant", "content": response})

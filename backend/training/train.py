@@ -79,4 +79,19 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     return model
 
 if __name__ == '__main__':
-    train_multitask_model(epochs=100)
+    import pandas as pd
+    import os
+    
+    csv_path = os.path.join(os.path.dirname(__file__), '../data/dcs_sandhi_pairs.csv')
+    dataset_overrides = None
+    
+    if os.path.exists(csv_path):
+        print(f"Loading generated dataset from {csv_path}")
+        df = pd.read_csv(csv_path)
+        data_pairs = list(zip(df['compound'], df['split'], df['rule_id']))
+        dataset_overrides = MultiTaskSandhiDataset(data_pairs=data_pairs)
+        print(f"Loaded {len(dataset_overrides)} samples.")
+    else:
+        print("Warning: CSV not found, falling back to SQLite db_path.")
+        
+    train_multitask_model(epochs=100, dataset_overrides=dataset_overrides)
