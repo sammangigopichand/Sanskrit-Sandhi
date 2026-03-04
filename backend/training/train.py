@@ -6,7 +6,7 @@ from backend.model.loss import MultiTaskSandhiLoss
 from backend.training.dataset import MultiTaskSandhiDataset, pad_collate_multitask
 import os
 
-def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend/model/multitask_sandhi_model.pth', db_path='sanskrit_lexicon.db', dataset_overrides=None):
+def train_multitask_model(epochs=10, batch_size=128, lr=0.001, save_path='backend/model/multitask_sandhi_model.pth', db_path='sanskrit_lexicon.db', dataset_overrides=None):
     if dataset_overrides is None:
         dataset = MultiTaskSandhiDataset(db_path=db_path)
     else:

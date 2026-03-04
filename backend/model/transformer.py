@@ -20,7 +20,8 @@ class PositionalEncoding(nn.Module):
         return x
 
 class MultiTaskSandhiTransformer(nn.Module):
-    def __init__(self, vocab_size, num_rules, embed_dim=128, hidden_dim=256, nhead=4, num_layers=3):
+    # Upscaled parameters to maximize 15GB VRAM on Colab T4
+    def __init__(self, vocab_size, num_rules, embed_dim=256, hidden_dim=512, nhead=8, num_layers=4):
         super(MultiTaskSandhiTransformer, self).__init__()
         
         # 1. Embeddings
