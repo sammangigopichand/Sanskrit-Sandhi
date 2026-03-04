@@ -35,12 +35,13 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
     # Initialize Gradient Scaler for Automatic Mixed Precision (AMP)
     scaler = torch.cuda.amp.GradScaler() if torch.cuda.is_available() else None
     
-    # Use AdamW + lower learning rate + OneCycleLR schema to prevent Transformer gradient collapse
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
+    # Use smaller stable learning rate to avoid exploding gradients with FP16
+    optimizer = optim.AdamW(model.parameters(), lr=3e-4, weight_decay=1e-3)
     steps_per_epoch = len(dataloader)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=1e-3, steps_per_epoch=steps_per_epoch, epochs=epochs,
-        pct_start=0.1, anneal_strategy='cos'
+    
+    # OneCycleLR can sometimes push learning rates too high, causing NaN. Using StepLR for safety.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=2, verbose=True
     )
     
     print("Starting Multi-Task Training...")
@@ -71,9 +72,19 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
                         y_bounds_pad, y_rules_tensor, y_recons_out_pad, pad_mask
                     )
                 
+                # Check for NaN loss before backwards pass
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"\nWarning: NaN loss detected at epoch {epoch+1}, batch {batch_idx}. Skipping batch.")
+                    optimizer.zero_grad()
+                    continue
+                    
                 scaler.scale(loss).backward()
+                
+                # Unscale the gradients *before* clipping, otherwise the gradients are scaled
+                # by a huge multiplier, causing clip_grad_norm_ to fail and push NaNs to weights!
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
                 scaler.step(optimizer)
                 scaler.update()
             else:
@@ -84,14 +95,26 @@ def train_multitask_model(epochs=10, batch_size=32, lr=0.001, save_path='backend
                     boundary_logits, rule_logits, recon_logits, conf_score,
                     y_bounds_pad, y_rules_tensor, y_recons_out_pad, pad_mask
                 )
+                
+                if torch.isnan(loss) or torch.isinf(loss):
+                    print(f"\nWarning: NaN loss detected at epoch {epoch+1}, batch {batch_idx}. Skipping batch.")
+                    optimizer.zero_grad()
+                    continue
+                    
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
                 
-            scheduler.step()
             total_loss += loss.item()
             
-        print(f"Epoch {epoch+1}/{epochs} | Avg Loss: {total_loss/len(dataloader):.4f}")
+        avg_epoch_loss = total_loss / len(dataloader)
+        print(f"Epoch {epoch+1}/{epochs} | Avg Loss: {avg_epoch_loss:.4f}")
+        
+        # Step the scheduler based on epoch loss
+        if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            scheduler.step(avg_epoch_loss)
+        else:
+            scheduler.step()
         
     print(f"Training Complete! Saving to {save_path}")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
