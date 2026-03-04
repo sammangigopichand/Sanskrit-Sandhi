@@ -41,7 +41,7 @@ def train_multitask_model(epochs=10, batch_size=128, lr=0.001, save_path='backen
     
     # OneCycleLR can sometimes push learning rates too high, causing NaN. Using StepLR for safety.
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=2, verbose=True
+        optimizer, mode='min', factor=0.5, patience=2
     )
     
     print("Starting Multi-Task Training...")
