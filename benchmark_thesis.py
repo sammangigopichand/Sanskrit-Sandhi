@@ -37,10 +37,10 @@ def load_data(dataset_choice, num_samples):
             golds.append(gold)
             
     elif dataset_choice == 'sandhikosh':
-        df = pd.read_csv('sandhikosh_sample.csv').sample(n=num_samples, random_state=42)
+        df = pd.read_csv('sandhikosh_sample.csv').dropna(subset=['compound_word', 'word1', 'word2']).sample(n=num_samples, random_state=42)
         for _, r in df.iterrows():
-            compound = str(r['Input']).strip()
-            gold = str(r['Output']).strip().replace('+', ' ')
+            compound = str(r['compound_word']).strip()
+            gold = f"{str(r['word1']).strip()} {str(r['word2']).strip()}"
             compounds.append(compound)
             golds.append(gold)
             
